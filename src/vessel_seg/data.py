@@ -52,12 +52,14 @@ def discover_cases(root: Path) -> list[Case]:
 def read_nrrd(path: Path) -> tuple[np.ndarray, np.ndarray]:
     """Reads a NRRD file and returns the values and affine matrix."""
     values, header = nrrd.read(str(path), index_order='F')
-    # Extract the direction matrix from the header.
+    # Extract the direction matrix from the header, describes img location and orientation
+    # Header - instructions for interpreting medical images
     directions = np.asarray(header["space directions"], dtype=float)
 
     # If the volume has a fourth dimension, and the direction matrix is (4, 3),
     # we assume it is a 4D volume with a single layer axis.
     if values.ndim == 4 and directions.shape == (4, 3):
+        #axis with no spatial direction- segmentation layer dimension, then combining layers
         layer_axes = np.flatnonzero(~np.isfinite(directions).any(axis=1))
         if path.name.endswith(".seg.nrrd") and len(layer_axes) == 1:
             layer_axis = int(layer_axes[0])
@@ -71,7 +73,7 @@ def read_nrrd(path: Path) -> tuple[np.ndarray, np.ndarray]:
     # Check that the direction matrix is valid.
     if not np.isfinite(directions).all() or np.linalg.matrix_rank(directions) != 3:
         raise ValueError(f"{path}: invalid directions")
-    
+    #RAS and LPS coordinate systems matrix production
     space = str(header.get("space", "")).lower()
     if space in ("left-posterior-superior", "lps"):
         to_ras = np.diag([-1, -1, 1])
@@ -80,8 +82,9 @@ def read_nrrd(path: Path) -> tuple[np.ndarray, np.ndarray]:
     else:
         raise ValueError(f"{path}: unknown space {space}")
     
-    # Extract the spatial origin from the header.
+    # Extract the spatial origin from the header
     origin = np.asarray(header["space origin"], dtype=float)
+    #starting location of img coordinate grid
     if origin.shape != (3,) or not np.isfinite(origin).all():
         raise ValueError(f"{path}: invalid spatial origin")
 
@@ -90,18 +93,25 @@ def read_nrrd(path: Path) -> tuple[np.ndarray, np.ndarray]:
     affine[:3, :3] = to_ras @ directions.T
     affine[:3, 3] = to_ras @ origin
     return values, affine
-
+#raw dataset --> discover_cases() (pair scans) --> read_nrrd() (loads array and builds matrices) --> align and preprocess --> Train 3D U-Net
 def resample(
+    #original scan
     values: np.ndarray,
+    #original affine matrix
     source: np.ndarray,
+    #matrix for the grid
     target: np.ndarray,
+    #dimensions of output array
     shape: tuple[int, int, int],
     *,
+    #interpolation method
     order: int = 3,
+    #value assigned outside 
     outside: float,
 ) -> np.ndarray:
     # SciPy maps each output voxel back to the source array.
     mapping = np.linalg.solve(source, target)
+    #interpolationm -nearest neighbor, linear interpolation
     return affine_transform(
         values,
         matrix=mapping[:3, :3],
@@ -113,6 +123,7 @@ def resample(
         prefilter=False,
     )
 
+#function takes one case object and preapres for use in training 
 def load_case(
     case: Case, 
     *, 
@@ -120,6 +131,7 @@ def load_case(
     hu_window: tuple[float, float] = (-200.0, 600.0),
     hu_offset: float = 0.0,
 ) -> Volume:
+    #validate preprocessing 
     low, high = hu_window
     if not np.isfinite([low, high, spacing_mm, hu_offset]).all():
         raise ValueError("Preprocessing settings must be finite")
@@ -127,16 +139,20 @@ def load_case(
     if high <= low or spacing_mm <= 0:
         raise ValueError("Expected low < high and positive spacing")
 
+    #load the ct scan and vessel mask
     image, image_affine = read_nrrd(case.scan)
     mask, mask_affine = read_nrrd(case.mask)
 
+    #calculate new voxel spacing
     source_spacing = np.linalg.norm(image_affine[:3, :3], axis=0)
     target = image_affine.copy()
     target[:3, :3] *= spacing_mm / source_spacing
 
+    #calculate the output array shape
     extent_mm = (np.array(image.shape) - 1) * source_spacing
     shape = tuple(int(length) for length in np.ceil(extent_mm / spacing_mm) + 1)
 
+    #Resample and nromalize the CT image
     image = resample(
         image.astype(np.float32) + hu_offset,
         image_affine,
@@ -149,6 +165,7 @@ def load_case(
     image -= low
     image /= high - low
 
+    #Resample vessel mask
     mask = resample(
         (mask != 0).astype(np.uint8),
         mask_affine,
@@ -160,5 +177,5 @@ def load_case(
 
     if not mask.any():
         raise ValueError(f"{case.case_id}: vessel mask is empty after alignment")
-
+#Return final processed volume
     return Volume(image=image, mask=mask, affine=target)
