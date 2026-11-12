@@ -131,7 +131,7 @@ def load_case(
     hu_window: tuple[float, float] = (-200.0, 600.0),
     hu_offset: float = 0.0,
 ) -> Volume:
-    #validate preprocessing 
+    # Validate preprocessing 
     low, high = hu_window
     if not np.isfinite([low, high, spacing_mm, hu_offset]).all():
         raise ValueError("Preprocessing settings must be finite")
@@ -143,16 +143,16 @@ def load_case(
     image, image_affine = read_nrrd(case.scan)
     mask, mask_affine = read_nrrd(case.mask)
 
-    #calculate new voxel spacing
+    # Calculate new voxel spacing
     source_spacing = np.linalg.norm(image_affine[:3, :3], axis=0)
     target = image_affine.copy()
     target[:3, :3] *= spacing_mm / source_spacing
 
-    #calculate the output array shape
+    # Calculate the output array shape
     extent_mm = (np.array(image.shape) - 1) * source_spacing
     shape = tuple(int(length) for length in np.ceil(extent_mm / spacing_mm) + 1)
 
-    #Resample and nromalize the CT image
+    # Resample and nromalize the CT image
     image = resample(
         image.astype(np.float32) + hu_offset,
         image_affine,
@@ -165,7 +165,7 @@ def load_case(
     image -= low
     image /= high - low
 
-    #Resample vessel mask
+    # Resample vessel mask
     mask = resample(
         (mask != 0).astype(np.uint8),
         mask_affine,
@@ -177,5 +177,39 @@ def load_case(
 
     if not mask.any():
         raise ValueError(f"{case.case_id}: vessel mask is empty after alignment")
-#Return final processed volume
+    # Return final processed volume
     return Volume(image=image, mask=mask, affine=target)
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("root", type=Path, help="Extracted AVT data directory")
+    parser.add_argument("--case", help="Case ID to load and check")
+    parser.add_argument("--spacing-mm", type=float, default=1.0)
+    parser.add_argument("--hu-offset", type=float, default=0.0)
+
+    args = parser.parse_args()
+
+    cases = discover_cases(args.root)
+    if args.case is None:
+        print(f"Found {len(cases)} paired cases")
+        for case in cases:
+            print(case.case_id)
+        return
+
+    case = next((item for item in cases if item.case_id == args.case), None)
+    if case is None:
+        parser.error(f"Unknown case ID: {args.case}")
+
+    volume = load_case(
+        case,
+        spacing_mm=args.spacing_mm,
+        hu_offset=args.hu_offset,
+    )
+    print(
+        f"{case.case_id}: shape={volume.image.shape}, "
+        f"CTA range=[{volume.image.min():.3f}, {volume.image.max():.3f}], "
+        f"vessel voxels={np.count_nonzero(volume.mask)}"
+    )
+
+if __name__ == "__main__":
+    main()
