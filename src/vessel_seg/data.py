@@ -92,12 +92,72 @@ def read_nrrd(path: Path) -> tuple[np.ndarray, np.ndarray]:
 
 def resample(
     values: np.ndarray,
-    sources: np.ndarray,
+    source: np.ndarray,
     target: np.ndarray,
     shape: tuple[int, int, int],
     *,
     order: int = 3,
     outside: float,
 ) -> np.ndarray:
-    """Resamples a 3D volume to a new shape using cubic spline interpolation."""
-    return affine_transform(values, sources, target, order=order, output=None, output_shape=shape, cval=outside)
+    # SciPy maps each output voxel back to the source array.
+    mapping = np.linalg.solve(source, target)
+    return affine_transform(
+        values,
+        matrix=mapping[:3, :3],
+        offset=mapping[:3, 3],
+        output_shape=shape,
+        order=order,
+        mode="grid-constant",
+        cval=outside,
+        prefilter=False,
+    )
+
+def load_case(
+    case: Case, 
+    *, 
+    spacing_mm: float = 1.0, 
+    hu_window: tuple[float, float] = (-200.0, 600.0),
+    hu_offset: float = 0.0,
+) -> Volume:
+    low, high = hu_window
+    if not np.isfinite([low, high, spacing_mm, hu_offset]).all():
+        raise ValueError("Preprocessing settings must be finite")
+
+    if high <= low or spacing_mm <= 0:
+        raise ValueError("Expected low < high and positive spacing")
+
+    image, image_affine = read_nrrd(case.scan)
+    mask, mask_affine = read_nrrd(case.mask)
+
+    source_spacing = np.linalg.norm(image_affine[:3, :3], axis=0)
+    target = image_affine.copy()
+    target[:3, :3] *= spacing_mm / source_spacing
+
+    extent_mm = (np.array(image.shape) - 1) * source_spacing
+    shape = tuple(int(length) for length in np.ceil(extent_mm / spacing_mm) + 1)
+
+    image = resample(
+        image.astype(np.float32) + hu_offset,
+        image_affine,
+        target,
+        shape,
+        order=1,
+        outside=low,
+    )
+    np.clip(image, low, high, out=image)
+    image -= low
+    image /= high - low
+
+    mask = resample(
+        (mask != 0).astype(np.uint8),
+        mask_affine,
+        target,
+        shape,
+        order=0,
+        outside=0,
+    )
+
+    if not mask.any():
+        raise ValueError(f"{case.case_id}: vessel mask is empty after alignment")
+
+    return Volume(image=image, mask=mask, affine=target)
