@@ -11,38 +11,39 @@ from scipy.ndimage import affine_transform
 
 @dataclass(frozen=True)
 class Case:
-    """A case with a scan and mask file."""
+    """Case tells us where data is stored. This class stores information on CT scan and vessel mask"""
     case_id: str
     scan: Path
     mask: Path
 
 @dataclass(frozen=True)
 class Volume:
-    """A 3D volume with a spatial origin and direction matrix."""
+    """Volume holds the loaded data. A 3D volume with a spatial origin and direction matrix."""
     image: np.ndarray
     mask: np.ndarray
     affine: np.ndarray
 
 def discover_cases(root: Path) -> list[Case]:
-    """Takes the dataset root directory and returns a list of Case objects."""
+    """Pair files in each directory by their shared filename stem."""
     scans = {}
     masks = {}
 
-    # Collect all scan and mask files in the dataset.
+    # Collect all scan and mask files in the dataset. Finds every NRRD file.
     for path in sorted(root.rglob("*.nrrd")):
         relative = path.relative_to(root).as_posix()
-        # Separate scan and mask files by their suffix.
+        # Separates scan and mask files by their suffix.
         if relative.endswith(".seg.nrrd"):
             # Mask files have a ".seg.nrrd" suffix.
             masks[relative.removesuffix(".seg.nrrd")] = path
         else:
             scans[relative.removesuffix(".nrrd")] = path
 
+    #Check for missing files
     missing = scans.keys() ^ masks.keys()
     if missing:
         raise ValueError(f"Unpaired AVT Files: {', '.join(missing)}")
 
-    # Check that we found at least one scan/mask pair.
+    # Check that we found at least one scan/mask pair. Return matched cases
     if not scans:
         raise ValueError(f"No AVT scan/mask pairs found under {root}")
 
