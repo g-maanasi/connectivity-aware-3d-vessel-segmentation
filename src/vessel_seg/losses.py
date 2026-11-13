@@ -5,13 +5,23 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+
 def soft_erode(image: torch.Tensor) -> torch.Tensor:
-    """Approximate erosion using min pooling along each spatial axis."""
-    depth = -F.max_pool3d(-image, (3, 1, 1), stride=1, padding=(1, 0, 0))
-    height = -F.max_pool3d(-image, (3,1,1), stride=1, padding=(1, 0, 0))
-    width = -F.max_pool3d(-image, (1,1,3), stride=1, padding=(0, 0, 1))
+    """Approximate erosion along all three spatial axes."""
+    depth = -F.max_pool3d(
+        -image, (3, 1, 1), stride=1, padding=(1, 0, 0)
+    )
+
+    height = -F.max_pool3d(
+        -image, (1, 3, 1), stride=1, padding=(0, 1, 0)
+    )
+
+    width = -F.max_pool3d(
+        -image, (1, 1, 3), stride=1, padding=(0, 0, 1)
+    )
 
     return torch.minimum(torch.minimum(depth, height), width)
+
 
 def soft_open(image: torch.Tensor) -> torch.Tensor:
     """Erode, then dilate."""
