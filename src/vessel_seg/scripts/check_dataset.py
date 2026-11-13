@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 from vessel_seg.data import discover_cases, load_case
 from vessel_seg.dataset import VesselPatchDataset
-
+from vessel_seg.model import build_model
 
 #reproduce the same random samples during testing
 np.random.seed(42)
@@ -97,4 +97,23 @@ for ax in axes.flat:
 plt.tight_layout()
 plt.savefig("vessel_patch_3views.png", dpi=150)
 plt.show()
+
+# Initialize the model
+model = build_model()
+model.eval()
+
+# Use one patch to avoid unnecessary memory usage
+with torch.no_grad():
+    predictions = model(images[:1])
+
+print("Model input shape:", images[:1].shape)
+print("Model output shape:", predictions.shape)
+
+# Verify the model returns two class scores per voxel
+assert predictions.shape == (1, 2, 96, 96, 96)
+
+# Check that predictions contain valid numbers
+assert torch.isfinite(predictions).all()
+
+print("3D U-Net forward pass successful!")
 
