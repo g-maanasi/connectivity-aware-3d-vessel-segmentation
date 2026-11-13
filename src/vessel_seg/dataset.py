@@ -1,4 +1,4 @@
-#data.py selects vessel or background center and extractd a matching 3D patch
+#dataset.py selects vessel or background center and extractd a matching 3D patch
 
 import numpy as np
 import torch
