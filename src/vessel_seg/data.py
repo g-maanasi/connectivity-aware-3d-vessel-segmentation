@@ -1,6 +1,6 @@
 # src/vessel_seg/data.py
-# A loader and preprocessing code for the AVT dataset. Turns a raw CT angiography scan and
-# its vessel annotation into two aligned 3D arrays for the training of a segmentation model.
+# Loads and aligns AVT CT scans with their vessel masks for training.
+# The scan is the 3D picture, and the mask is the answer key (1 = vessel, 0 = background).
 
 import argparse
 from dataclasses import dataclass
@@ -38,7 +38,7 @@ def discover_cases(root: Path) -> list[Case]:
         else:
             scans[relative.removesuffix(".nrrd")] = path
 
-    #Check for missing files
+    # Check for missing files
     missing = scans.keys() ^ masks.keys()
     if missing:
         raise ValueError(f"Unpaired AVT Files: {', '.join(missing)}")
@@ -73,7 +73,10 @@ def read_nrrd(path: Path) -> tuple[np.ndarray, np.ndarray]:
     # Check that the direction matrix is valid.
     if not np.isfinite(directions).all() or np.linalg.matrix_rank(directions) != 3:
         raise ValueError(f"{path}: invalid directions")
-    #RAS and LPS coordinate systems matrix production
+
+    # RAS and LPS coordinate systems matrix production
+    # RAS means Right, Anterior (front), and Superior (up).
+    # LPS means Left, Posterior (back), and Superior (up).
     space = str(header.get("space", "")).lower()
     if space in ("left-posterior-superior", "lps"):
         to_ras = np.diag([-1, -1, 1])
@@ -84,7 +87,7 @@ def read_nrrd(path: Path) -> tuple[np.ndarray, np.ndarray]:
     
     # Extract the spatial origin from the header
     origin = np.asarray(header["space origin"], dtype=float)
-    #starting location of img coordinate grid
+    # Starting location of img coordinate grid
     if origin.shape != (3,) or not np.isfinite(origin).all():
         raise ValueError(f"{path}: invalid spatial origin")
 
@@ -93,25 +96,33 @@ def read_nrrd(path: Path) -> tuple[np.ndarray, np.ndarray]:
     affine[:3, :3] = to_ras @ directions.T
     affine[:3, 3] = to_ras @ origin
     return values, affine
-#raw dataset --> discover_cases() (pair scans) --> read_nrrd() (loads array and builds matrices) --> align and preprocess --> Train 3D U-Net
+    
 def resample(
-    #original scan
+    # Original scan
     values: np.ndarray,
-    #original affine matrix
+    # Original affine matrix
     source: np.ndarray,
-    #matrix for the grid
+    # Matrix for the grid
     target: np.ndarray,
-    #dimensions of output array
+    # Dimensions of output array
     shape: tuple[int, int, int],
     *,
-    #interpolation method
+    # Interpolation Method
     order: int = 3,
-    #value assigned outside 
+    # Value assigned outside 
     outside: float,
 ) -> np.ndarray:
+    """Put a 3D scan or mask onto a new voxel grid.
+
+    For each voxel in the new grid, use the affine matrices to find the
+    matching spot in the original grid. Use `order` to pick or blend nearby
+    values, and use `outside` as the fill value beyond the original grid.
+    Return a new array with the requested `shape`.
+    """
+
     # SciPy maps each output voxel back to the source array.
     mapping = np.linalg.solve(source, target)
-    #interpolationm -nearest neighbor, linear interpolation
+    # Interpolationm - Nearest neighbor, linear interpolation
     return affine_transform(
         values,
         matrix=mapping[:3, :3],
@@ -123,7 +134,6 @@ def resample(
         prefilter=False,
     )
 
-#function takes one case object and preapres for use in training 
 def load_case(
     case: Case, 
     *, 
@@ -131,7 +141,12 @@ def load_case(
     hu_window: tuple[float, float] = (-200.0, 600.0),
     hu_offset: float = 0.0,
 ) -> Volume:
-    # Validate preprocessing 
+    """Load a CT scan and its vessel mask onto the same voxel grid.
+
+    Apply the HU offset to the scan, then clip it to the HU window
+    and scale its intensities to [0, 1]. Return the normalized scan,
+    the aligned binary mask, and their shared affine.
+    """
     low, high = hu_window
     if not np.isfinite([low, high, spacing_mm, hu_offset]).all():
         raise ValueError("Preprocessing settings must be finite")
@@ -139,7 +154,7 @@ def load_case(
     if high <= low or spacing_mm <= 0:
         raise ValueError("Expected low < high and positive spacing")
 
-    #load the ct scan and vessel mask
+    # Load the CT scan and vessel mask
     image, image_affine = read_nrrd(case.scan)
     mask, mask_affine = read_nrrd(case.mask)
 
@@ -181,6 +196,9 @@ def load_case(
     return Volume(image=image, mask=mask, affine=target)
 
 def main() -> None:
+    """List available AVT cases or load and check one case."""
+
+    # Read the dataset folder and optional settings from the command line.
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("root", type=Path, help="Extracted AVT data directory")
     parser.add_argument("--case", help="Case ID to load and check")
@@ -189,22 +207,27 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    # Find matching CT scans and vessel masks in the dataset folder.
     cases = discover_cases(args.root)
+    # If no case ID was given, list the available IDs and stop.
     if args.case is None:
         print(f"Found {len(cases)} paired cases")
         for case in cases:
             print(case.case_id)
         return
 
+    # Find the requested case or show an error if the ID is unknown.
     case = next((item for item in cases if item.case_id == args.case), None)
     if case is None:
         parser.error(f"Unknown case ID: {args.case}")
 
+    # Load the scan and mask and align them on the same voxel grid.
     volume = load_case(
         case,
         spacing_mm=args.spacing_mm,
         hu_offset=args.hu_offset,
     )
+    # Show the scan dimensions, normalized intensity range, and vessel voxel count.
     print(
         f"{case.case_id}: shape={volume.image.shape}, "
         f"CTA range=[{volume.image.min():.3f}, {volume.image.max():.3f}], "
