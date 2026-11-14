@@ -1,5 +1,13 @@
+# Raw CT scans and masks
 data/raw/
 data/processed/
+# Virtual environment
 .venv/
 venv/
+# Training checkpoints and outputs
 runs/
+# Python cache
+__pycache__/
+*.pyc
+# Generated visualization files
+*.png
