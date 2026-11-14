@@ -225,10 +225,14 @@ def main() -> None:
             st.stop()
     else:
         if not cases:
+            with st.spinner("No cases found — generating a synthetic demo case…"):
+                import make_demo_case
+                make_demo_case.main()
+            cases = discover_cases()
+        if not cases:
             st.info(
                 "No demo cases found. Add `runs/demo/<case_id>/scan.nii.gz` "
-                "(plus mask files), run `python app/make_demo_case.py` for a synthetic "
-                "phantom, or switch to **Upload files** in the sidebar."
+                "(plus mask files) or switch to **Upload files** in the sidebar."
             )
             st.stop()
         case_id = st.sidebar.selectbox("Case", list(cases))
