@@ -24,6 +24,8 @@ import nibabel as nib
 import numpy as np
 import pandas as pd
 import streamlit as st
+import torch
+from vessel_seg.model import build_model
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEMO_DIR = REPO_ROOT / "runs" / "demo"
@@ -49,6 +51,13 @@ METRIC_LABELS = {
     "hd95_mm": "HD95 (mm) ↓",
 }
 
+
+@st.cache_resource
+def load_trained_model(checkpoint_path):
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    model = build_model()
+    model.load_state_dict(checkpoint["model_state_dict"])
+    return model.eval()
 
 # --------------------------------------------------------------------------- #
 # Loading
