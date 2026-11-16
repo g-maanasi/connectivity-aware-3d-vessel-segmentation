@@ -28,6 +28,9 @@ import streamlit as st
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEMO_DIR = REPO_ROOT / "runs" / "demo"
 sys.path.insert(0, str(REPO_ROOT / "src"))
+# make_demo_case.py may live next to this file or at the repo root
+sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from vessel_seg.metrics import compute_metrics  # noqa: E402
 
@@ -227,6 +230,7 @@ def main() -> None:
         if not cases:
             with st.spinner("No cases found — generating a synthetic demo case…"):
                 import make_demo_case
+                make_demo_case.OUT_DIR = DEMO_DIR / "synthetic"
                 make_demo_case.main()
             cases = discover_cases()
         if not cases:
