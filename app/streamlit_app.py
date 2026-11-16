@@ -230,6 +230,7 @@ def main() -> None:
         if not cases:
             with st.spinner("No cases found — generating a synthetic demo case…"):
                 import make_demo_case
+                make_demo_case.OUT_DIR = DEMO_DIR / "synthetic"
                 make_demo_case.main()
             cases = discover_cases()
         if not cases:
