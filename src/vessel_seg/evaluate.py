@@ -87,7 +87,7 @@ def evaluate(args):
     models = {}
     spacings = []
     for mode in args.modes:
-        checkpoint_path = Path("runs/full") / mode / "best.pt"
+        checkpoint_path = Path("runs/hu_corrected/full") / mode / "best.pt"
         model, spacing = load_model(checkpoint_path, mode, device)
         models[mode] = model
         spacings.append(spacing)
