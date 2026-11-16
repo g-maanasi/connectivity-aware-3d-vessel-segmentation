@@ -31,7 +31,6 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 # make_demo_case.py may live next to this file or at the repo root
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-3. Commit changes → Streamlit Cloud auto-redeploys in ~1 min (or hit "Reboot app" under Manage app)
 
 from vessel_seg.metrics import compute_metrics  # noqa: E402
 
