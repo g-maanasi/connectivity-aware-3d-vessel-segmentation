@@ -46,8 +46,8 @@ class VesselLoss(nn.Module):
         skeleton_iterations: int = 10,
     ):
         super().__init__()
-        if mode not in {"baseline", "connectivity"}:
-            raise ValueError("mode must be 'baseline' or 'connectivity'")
+        if mode not in {"baseline", "connectivity", "combined"}:
+            raise ValueError("mode must be 'baseline' or 'connectivity', or 'combined'")
         if cldice_weight < 0 or skeleton_iterations < 0:
             raise ValueError("cldice_weight and skeleton_iterations must be nonnegative")
 
@@ -67,9 +67,13 @@ class VesselLoss(nn.Module):
         total = (vessel_probs + masks).sum(dim=spatial_dims)
         dice_loss = 1.0 - ((2.0 * intersection + eps) / (total + eps)).mean()
 
-        if self.mode == "baseline":
+        # Cross-Entropy helps classify vessel and background voxels
+        if self.mode in {"baseline", "combined"}:
             labels = masks.squeeze(1).long()
-            return dice_loss + F.cross_entropy(logits, labels)
+            ce_loss = F.cross_entropy(logits, labels)
+
+            if self.mode == "baseline":
+                return dice_loss + ce_loss
 
         pred_skeleton = soft_skeleton(vessel_probs, self.skeleton_iterations)
         true_skeleton = soft_skeleton(masks, self.skeleton_iterations)
@@ -89,5 +93,9 @@ class VesselLoss(nn.Module):
         has_centerline = true_length > 0
         cldice_loss = ((1.0 - cldice) * has_centerline).sum()
         cldice_loss = cldice_loss / has_centerline.sum().clamp_min(1)
+
+        # Combined loss uses standard segmentation and connectivity
+        if self.mode == "combined":
+            return dice_loss + ce_loss + self.cldice_weight * cldice_loss
 
         return dice_loss + self.cldice_weight * cldice_loss

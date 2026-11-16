@@ -139,8 +139,23 @@ def load_case(
     *, 
     spacing_mm: float = 1.0, 
     hu_window: tuple[float, float] = (-200.0, 600.0),
-    hu_offset: float = 0.0,
+    hu_offset: float | None = None,
 ) -> Volume:
+    # Select the appropriate HU correction for each cohort
+    if hu_offset is None:
+        cohort = case.case_id.split("/")[0].lower()
+
+        offsets = {
+            "dongyang": 0.0,
+            "kits": -1024.0,
+            "rider": -1024.0,
+        }
+
+        if cohort not in offsets:
+            raise ValueError(f"Unknown AVT cohort: {cohort}")
+
+        hu_offset = offsets[cohort]
+
     """Load a CT scan and its vessel mask onto the same voxel grid.
 
     Apply the HU offset to the scan, then clip it to the HU window

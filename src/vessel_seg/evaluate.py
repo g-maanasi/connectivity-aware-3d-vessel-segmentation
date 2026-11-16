@@ -105,6 +105,19 @@ def evaluate(args):
         for mode, model in models.items():
             pred = predict(model, volume.image, device)
             scores = compute_metrics(pred, truth, spacing)
+            
+            # Calculate the proportion of predicted vessels that are correct
+            true_positive = np.count_nonzero(pred & truth)
+
+            precision = true_positive / max(np.count_nonzero(pred), 1)
+
+            print(f"  {mode} precision: {precision:.4f}")
+            print(
+                "  Predicted / actual vessel volume:",
+                round(np.count_nonzero(pred) / max(np.count_nonzero(truth), 1), 2)
+            )
+
+            
             rows.append({"case_id": case_id, "mode": mode, **scores})
             print(f"  {mode}: " + ", ".join(f"{k}={v:.4f}" for k, v in scores.items()), flush=True)
             if i == 1:
@@ -149,10 +162,13 @@ def main():
     parser.add_argument("--max-cases", type=int, default=0,
                         help="First N validation scans for a quick check; 0 = all")
     parser.add_argument("--device", choices=["auto", "cpu", "cuda", "mps"], default="auto")
-    parser.add_argument("--hu-offset", type=float, default=0.0,
+    parser.add_argument("--hu-offset", type=float, default=None,
                         help="Use the same intensity offset as training")
     args = parser.parse_args()
     if args.max_cases < 0:
         parser.error("--max-cases must be nonnegative")
     evaluate(args)
+
+if __name__ == "__main__":
+    main()
 

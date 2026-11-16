@@ -279,7 +279,7 @@ def main():
     parser = argparse.ArgumentParser(description="Train AVT 3D U-Net")
 
     # Choose which loss mode to train with. This flag is required.
-    parser.add_argument("--mode", required=True, choices=["baseline", "connectivity"])
+    parser.add_argument("--mode", required=True, choices=["baseline", "connectivity", "combined"])
 
     # Set where to find scans and case splits and where to save results.
     parser.add_argument("--data-root", type=Path, default=Path("data/raw"))
@@ -299,7 +299,7 @@ def main():
 
     # Set the distance between voxels and the offset added to CT intensities.
     parser.add_argument("--spacing-mm", type=float, default=1.0)
-    parser.add_argument("--hu-offset", type=float, default=0.0)
+    parser.add_argument("--hu-offset", type=float, default=None)
 
     # Set the strength of the connectivity term and the number of
     # steps used to approximate vessel centerlines for clDice.
