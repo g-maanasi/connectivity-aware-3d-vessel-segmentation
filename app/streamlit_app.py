@@ -24,6 +24,7 @@ import nibabel as nib
 import numpy as np
 import pandas as pd
 import streamlit as st
+from vessel_seg.model_registry import MODEL_PATHS
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEMO_DIR = REPO_ROOT / "app" / "demo_cases"
