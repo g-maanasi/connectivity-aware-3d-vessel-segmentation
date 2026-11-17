@@ -26,17 +26,16 @@ import pandas as pd
 import streamlit as st
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEMO_DIR = REPO_ROOT / "runs" / "demo"
+DEMO_DIR = REPO_ROOT / "app" / "demo_cases"
+
 sys.path.insert(0, str(REPO_ROOT / "src"))
-# make_demo_case.py may live next to this file or at the repo root
-sys.path.insert(0, str(REPO_ROOT))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from vessel_seg.metrics import compute_metrics  # noqa: E402
 
 MODELS = (
-    ("Baseline U-Net", "baseline.nii.gz", (251, 146, 60)),     # orange
-    ("Connectivity-aware U-Net", "connectivity.nii.gz", (167, 139, 250)),  # violet
+    ("Baseline U-Net", "baseline.nii.gz", (251, 146, 60)),
+    ("Connectivity-aware U-Net", "connectivity.nii.gz", (167, 139, 250)),
+    ("Combined U-Net", "combined.nii.gz", (56, 189, 248)),
 )
 TRUTH_FILE = ("Ground truth", "ground_truth.nii.gz", (45, 212, 191))  # teal
 PLANES = {"Axial": 2, "Coronal": 1, "Sagittal": 0}
@@ -52,6 +51,13 @@ METRIC_LABELS = {
     "hd95_mm": "HD95 (mm) ↓",
 }
 
+
+@st.cache_resource
+def load_trained_model(checkpoint_path):
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    model = build_model()
+    model.load_state_dict(checkpoint["model_state_dict"])
+    return model.eval()
 
 # --------------------------------------------------------------------------- #
 # Loading
@@ -230,7 +236,6 @@ def main() -> None:
         if not cases:
             with st.spinner("No cases found — generating a synthetic demo case…"):
                 import make_demo_case
-                make_demo_case.OUT_DIR = DEMO_DIR / "synthetic"
                 make_demo_case.main()
             cases = discover_cases()
         if not cases:
