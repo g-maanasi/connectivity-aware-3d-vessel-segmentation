@@ -138,15 +138,15 @@ def evaluate(args):
                             "ci_low": low, "ci_high": high, "valid_cases": n})
     write_csv(output / "summary.csv", summary)
 
-    if set(args.modes) == {"baseline", "connectivity"}:
+    if set(args.modes) == {"baseline", "combined"}:
         by_mode = {mode: {r["case_id"]: r for r in rows if r["mode"] == mode}
                    for mode in args.modes}
         paired = []
         for metric in METRICS:
-            differences = [by_mode["connectivity"][c][metric] -
+            differences = [by_mode["combined"][c][metric] -
                            by_mode["baseline"][c][metric] for c in case_ids]
             mean, low, high, n = bootstrap_ci(differences)
-            paired.append({"metric": metric, "connectivity_minus_baseline": mean,
+            paired.append({"metric": metric, "combined_minus_baseline": mean,
                            "ci_low": low, "ci_high": high, "valid_pairs": n})
         write_csv(output / "paired_difference.csv", paired)
 
@@ -157,7 +157,7 @@ def evaluate(args):
 def main():
     parser = argparse.ArgumentParser(description="Evaluate AVT 3D vessel segmentation")
     parser.add_argument("--split", choices=["val", "test"], default="val")
-    parser.add_argument("--modes", nargs="+", choices=["baseline", "connectivity"],
+    parser.add_argument("--modes", nargs="+", choices=["baseline", "connectivity", "combined"],
                         default=["baseline", "connectivity"])
     parser.add_argument("--max-cases", type=int, default=0,
                         help="First N validation scans for a quick check; 0 = all")

@@ -1,0 +1,9 @@
+mode,metric,mean,ci_low,ci_high,valid_cases
+baseline,dice,0.6458230524303736,nan,nan,1
+baseline,cldice,0.616282327249622,nan,nan,1
+baseline,recall,0.7938320135923913,nan,nan,1
+baseline,hd95_mm,128.96898852049665,nan,nan,1
+combined,dice,0.7097906564404952,nan,nan,1
+combined,cldice,0.7228769841913626,nan,nan,1
+combined,recall,0.8709099002514091,nan,nan,1
+combined,hd95_mm,135.9019867291152,nan,nan,1

@@ -1,0 +1,5 @@
+metric,connectivity_minus_baseline,ci_low,ci_high,valid_pairs
+dice,-0.5630443207737131,nan,nan,1
+cldice,-0.4739110867863224,nan,nan,1
+recall,0.16321841242374657,nan,nan,1
+hd95_mm,44.013669569844865,nan,nan,1
