@@ -28,14 +28,15 @@ import torch
 from vessel_seg.model import build_model
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEMO_DIR = REPO_ROOT / "runs" / "demo"
+DEMO_DIR = REPO_ROOT / "app" / "demo_cases"
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from vessel_seg.metrics import compute_metrics  # noqa: E402
 
 MODELS = (
-    ("Baseline U-Net", "baseline.nii.gz", (251, 146, 60)),     # orange
-    ("Connectivity-aware U-Net", "connectivity.nii.gz", (167, 139, 250)),  # violet
+    ("Baseline U-Net", "baseline.nii.gz", (251, 146, 60)),
+    ("Connectivity-aware U-Net", "connectivity.nii.gz", (167, 139, 250)),
+    ("Combined U-Net", "combined.nii.gz", (56, 189, 248)),
 )
 TRUTH_FILE = ("Ground truth", "ground_truth.nii.gz", (45, 212, 191))  # teal
 PLANES = {"Axial": 2, "Coronal": 1, "Sagittal": 0}
