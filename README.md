@@ -1,6 +1,12 @@
 # Connectivity-Aware 3D Vessel Segmentation
 
-This CS 5787 project segments the aorta and its annotated branches in 3D CT angiography (CTA). Both training modes use the same MONAI 3D U-Net. The baseline uses Dice plus cross-entropy. The connectivity mode uses Dice plus weighted soft-clDice.
+This CS 5787 project segments the aorta and its annotated branches in 3D CT angiography (CTA). The experiments use the same MONAI 3D U-Net architecture with three training objectives.
+
+| Variant | Training objective |
+| --- | --- |
+| Baseline | Dice + cross-entropy |
+| Connectivity-aware | Dice + weighted soft-clDice |
+| Combined | Dice + cross-entropy + soft-clDice |
 
 ## Setup
 
@@ -31,7 +37,7 @@ python -m vessel_seg.train --mode baseline --epochs 1 --max-train-cases 1 --max-
 python -m vessel_seg.train --mode connectivity --epochs 1 --max-train-cases 1 --max-val-cases 1
 ```
 
-For the full runs, use the same GPU and configuration for both modes.
+These commands show the baseline and connectivity-aware training entry points. Run `python -m vessel_seg.train --help` to check the objective and preprocessing options available in your checkout. Match the preprocessing and training settings across runs used for direct comparison.
 
 ```bash
 python -m vessel_seg.train --mode baseline --device cuda
@@ -42,7 +48,7 @@ Defaults include 96³ patches, 1 mm target spacing, eight patches per case, and 
 
 ## Evaluate full scans
 
-After producing both full-run checkpoints, evaluate a validation case to check the pipeline and then run on the held-out test cases.
+After producing the full-run checkpoints required by the evaluator, evaluate a validation case to check the pipeline and then run on the nine held-out test cases.
 
 ```bash
 python -m vessel_seg.evaluate --split val --max-cases 1 --device cuda
@@ -53,12 +59,39 @@ The evaluator writes per-case Dice, clDice, recall, and HD95 in millimeters, alo
 
 ## Open the viewer
 
+From the repository root, activate the environment and export `PYTHONPATH` as shown in Setup so Streamlit can import `vessel_seg`.
+
 ```bash
 python -m streamlit run app/streamlit_app.py
 ```
 
-The viewer reads pre-exported NIfTI files from `runs/demo/<case_id>/`. Add a normalized `scan.nii.gz` and any available `ground_truth.nii.gz`, `baseline.nii.gz`, and `connectivity.nii.gz` masks on the same grid. Prepare these NIfTI files separately from the evaluator's CSV and PNG outputs.
+The milestone viewer looks for pre-exported NIfTI cases under `app/demo_cases/<case_id>/`. Use the directory configured by `DEMO_DIR` if your local app points to `runs/demo/`. Each case contains:
 
-## Milestone status
+| File | Contents |
+| --- | --- |
+| `scan.nii.gz` | Required CTA scan |
+| `ground_truth.nii.gz` | Optional reference mask |
+| `baseline.nii.gz` | Optional baseline prediction |
+| `connectivity.nii.gz` | Optional connectivity-aware prediction |
+| `combined.nii.gz` | Optional combined-objective prediction |
 
-The archived [baseline](https://github.com/g-maanasi/connectivity-aware-3d-vessel-segmentation/blob/ecd1d7f/runs/smoke/baseline/history.csv) and [connectivity](https://github.com/g-maanasi/connectivity-aware-3d-vessel-segmentation/blob/ecd1d7f/runs/smoke/connectivity/history.csv) smoke runs recorded one epoch and validation patch Dice of 0.12073 and 0.12044, respectively. Full-volume comparison results are pending.
+Keep the scan and masks on the same voxel grid. The app supports NIfTI uploads, axial/coronal/sagittal overlays, error maps and metrics when a reference mask is available, and interactive 3D meshes. The 3D view uses Plotly and scikit-image. The milestone app can generate a synthetic demo when no bundled cases are available. Prepare real-scan NIfTI exports separately from the evaluator's CSV and PNG outputs.
+
+## Milestone results
+
+Best validation patch Dice across 15-epoch runs, as reported in the milestone:
+
+| Training objective | Preprocessing | Best validation patch Dice |
+| --- | --- | ---: |
+| Dice + cross-entropy | Original | 0.7600 |
+| Dice + soft-clDice | Original | 0.4547 |
+| Dice + cross-entropy | Corrected HU | 0.7355 |
+| Dice + cross-entropy + soft-clDice | Corrected HU | 0.8411 |
+
+With corrected HU preprocessing, the combined objective improved validation patch Dice by **0.1056** over the baseline. The full-volume comparison on the nine held-out scans is pending. It will measure Dice, clDice, recall, and HD95 and inspect predictions for missed branches and false connections.
+
+## Team ownership
+
+- **Maanasi Ganapathy (mg2563)** owns CTA preprocessing and loss implementation, ran the initial baseline training, and contributed to the U-Net and Streamlit viewer.
+- **Imren More (im436)** owns patch-based training and full-volume evaluation, including patch sampling, checkpoint evaluation, and metric aggregation. She retrained the connectivity-aware U-Net.
+- **Kanta Garg (kg632)** owns the viewer's synthetic demo workflow, configured GitHub Codespaces to launch the viewer, and contributed to the Streamlit MVP.
