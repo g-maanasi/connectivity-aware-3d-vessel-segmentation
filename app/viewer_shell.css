@@ -1,0 +1,78 @@
+.stApp:has(#vessel-theme-dark) {
+  color-scheme: dark;
+  --vessel-bg: #0c111b;
+  --vessel-surface: #151e2c;
+  --vessel-control: #1d293a;
+  --vessel-text: #eef3fa;
+  --vessel-muted: #b3c0d2;
+  --vessel-border: #35445a;
+  --vessel-accent: #67e8f9;
+}
+
+.stApp:has(#vessel-theme-light) {
+  color-scheme: light;
+  --vessel-bg: #f3f6fb;
+  --vessel-surface: #ffffff;
+  --vessel-control: #e9eff7;
+  --vessel-text: #142235;
+  --vessel-muted: #495c73;
+  --vessel-border: #c4d0df;
+  --vessel-accent: #08758b;
+}
+
+.stApp:has([id^="vessel-theme-"]),
+.stApp:has([id^="vessel-theme-"]) [data-testid="stHeader"] {
+  background: var(--vessel-bg);
+  color: var(--vessel-text);
+}
+
+.stApp:has([id^="vessel-theme-"]) [data-testid="stSidebar"] {
+  background: var(--vessel-surface);
+  border-right: 1px solid var(--vessel-border);
+}
+
+.stApp:has([id^="vessel-theme-"])
+  :is(h1, h2, h3, h4, label, [role="tab"], [data-testid="stWidgetLabel"]) {
+  color: var(--vessel-text);
+}
+
+.stApp:has([id^="vessel-theme-"])
+  [data-testid="stMarkdownContainer"]
+  :is(p, li, th, td) {
+  color: var(--vessel-text);
+}
+
+.stApp:has([id^="vessel-theme-"]) [data-testid="stCaptionContainer"] p {
+  color: var(--vessel-muted);
+}
+
+.stApp:has([id^="vessel-theme-"])
+  [data-testid="stSidebar"]
+  :is(button, [data-baseweb="select"] > div) {
+  background: var(--vessel-control);
+  border-color: var(--vessel-border);
+  color: var(--vessel-text);
+}
+
+.stApp:has([id^="vessel-theme-"]) [role="tab"][aria-selected="true"] {
+  color: var(--vessel-accent);
+}
+
+.vessel-header {
+  padding: clamp(1.25rem, 3vw, 2rem);
+  margin-bottom: 0.75rem;
+  border: 1px solid var(--vessel-border);
+  border-left: 4px solid var(--vessel-accent);
+  border-radius: 14px;
+  background: var(--vessel-surface);
+}
+
+.vessel-header h1 {
+  margin: 0;
+  padding: 0;
+  font-size: clamp(1.6rem, 3vw, 2.4rem);
+}
+
+.vessel-header p {
+  margin: 0.5rem 0 0;
+}

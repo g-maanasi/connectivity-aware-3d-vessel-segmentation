@@ -26,6 +26,7 @@ import pandas as pd
 import streamlit as st
 from vessel_seg.model_registry import MODEL_PATHS
 from react_viewer import show_viewer
+from viewer_shell import show_about, show_header, show_tutorial
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEMO_DIR = REPO_ROOT / "app" / "demo_cases"
@@ -213,7 +214,7 @@ def save_uploads(uploads) -> Path | None:
 # --------------------------------------------------------------------------- #
 def main() -> None:
     st.set_page_config(page_title="Vessel Segmentation Viewer", layout="wide", page_icon="🩸")
-    st.title("Connectivity-aware 3D vessel segmentation")
+    show_header()
     st.caption("Baseline (Dice+CE) vs connectivity-aware (Dice+clDice) U-Net on AVT CTA scans.")
 
     # ---------------- case selection ----------------
@@ -297,7 +298,15 @@ def main() -> None:
         help="Error map: green = correct vessel, red = false positive, blue = missed vessel.",
     )
 
-    tab_slices, tab_metrics, tab_3d = st.tabs(["🩻 Slices", "📊 Metrics", "🧊 3D view"])
+    tab_slices, tab_metrics, tab_3d, tab_tutorial, tab_about = st.tabs(
+        ["Viewer", "Metrics", "3D View", "Tutorial", "About"]
+    )
+
+    with tab_tutorial:
+        show_tutorial()
+
+    with tab_about:
+        show_about()
 
     # ---------------- slices ----------------
     with tab_slices:
@@ -401,7 +410,6 @@ def main() -> None:
                            "what the clDice loss is meant to fix.")
             else:
                 st.info("Selected masks are empty — nothing to mesh.")
-
 
 if __name__ == "__main__":
     main()
