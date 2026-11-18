@@ -25,6 +25,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from vessel_seg.model_registry import MODEL_PATHS
+from react_viewer import show_viewer
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEMO_DIR = REPO_ROOT / "app" / "demo_cases"
@@ -301,54 +302,37 @@ def main() -> None:
     # ---------------- slices ----------------
     with tab_slices:
         st.caption(
-            f"Case **{case_id}** · {plane_name} slice {slice_number}/{n_slices} · "
-            f"shape {tuple(int(s) for s in scan.shape)} · "
-            f"spacing {spacing[0]:.2f}×{spacing[1]:.2f}×{spacing[2]:.2f} mm"
+            f"{case_id} · {plane_name} slice {slice_number}/{n_slices} · "
+            f"{spacing[0]:.2f} × {spacing[1]:.2f} × {spacing[2]:.2f} mm spacing"
         )
+
         index = slice_number - 1
         ct = take_slice(scan, axis, index)
 
-        panels = [TRUTH_FILE] + list(MODELS)
-        for column, (title, filename, color) in zip(st.columns(len(panels)), panels):
-            with column:
-                st.markdown(
-                    f'<div style="height:2.4rem;display:flex;align-items:center;'
-                    f'font-size:1.15rem;font-weight:600;border-bottom:1px solid #444;'
-                    f'margin-bottom:0.5rem;white-space:nowrap;overflow:hidden;'
-                    f'text-overflow:ellipsis">'
-                    f'<span style="color:rgb{color};margin-right:0.4rem">●</span>{title}</div>',
-                    unsafe_allow_html=True,
-                )
-                if title == TRUTH_FILE[0]:
-                    mask = truth
-                    issue = truth_issue
-                else:
-                    mask = masks.get(title)
-                    issue = issues.get(title)
+        reference_slice = (
+            np.rot90(take_slice(truth, axis, index)).astype(bool)
+            if truth is not None
+            else None
+        )
 
-                note = None
-                if mask is None:
-                    note = f"Mask {issue}"
-                    image = render_overlay(ct, None, color, window, opacity)
-                elif mode == "Error map vs ground truth" and truth is not None \
-                        and title != TRUTH_FILE[0]:
-                    image = render_errors(ct, take_slice(mask, axis, index),
-                                          take_slice(truth, axis, index), window, opacity)
-                else:
-                    image = render_overlay(ct, take_slice(mask, axis, index),
-                                           color, window, opacity)
-                st.image(image, use_container_width=True)
-                if note:
-                    st.caption(note)
-
-        if mode == "Error map vs ground truth" and truth is not None:
-            st.markdown(
-                " ".join(
-                    f'<span style="color:rgb{c}">●</span> {name}&nbsp;&nbsp;'
-                    for name, c in ERROR_COLORS.items()
-                ),
-                unsafe_allow_html=True,
+        models = []
+        for title, filename, color in MODELS:
+            mask = masks.get(title)
+            mask_slice = (
+                np.rot90(take_slice(mask, axis, index)).astype(bool)
+                if mask is not None
+                else None
             )
+            models.append((title, filename, color, mask_slice, issues.get(title)))
+
+        show_viewer(
+            case_id=case_id,
+            scan=render_overlay(ct, None, (0, 0, 0), window, 0.0),
+            reference=reference_slice,
+            models=models,
+            error_colors=ERROR_COLORS,
+            error_mode=mode == "Error map vs ground truth",
+        )
 
     # ---------------- metrics ----------------
     with tab_metrics:

@@ -12,3 +12,5 @@ monai>=1.5,<2
 pynrrd>=1.0,<2
 PyYAML>=6.0,<7
 matplotlib>=3.8,<4
+streamlit>=1.51
+Pillow

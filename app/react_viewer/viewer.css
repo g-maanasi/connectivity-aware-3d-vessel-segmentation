@@ -1,0 +1,93 @@
+.vessel-viewer {
+  --viewer-border: #344155;
+  --viewer-surface: #121b2a;
+  color: #e9eff8;
+  font-family: var(--st-font, system-ui, sans-serif);
+}
+
+.viewer-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 1rem 1.5rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--viewer-border);
+  border-radius: 12px;
+  background: var(--viewer-surface);
+}
+
+.viewer-controls label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.875rem;
+}
+
+.viewer-controls select {
+  padding: 0.4rem 0.6rem;
+  color: inherit;
+  background: #1e293b;
+  border: 1px solid #58657a;
+  border-radius: 6px;
+  font: inherit;
+}
+
+.viewer-controls input {
+  accent-color: #67e8f9;
+}
+
+.viewer-controls .reference-toggle {
+  display: flex;
+  align-items: center;
+  padding-block: 0.4rem;
+}
+
+.slice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.slice-panel {
+  overflow: hidden;
+  border: 1px solid var(--viewer-border);
+  border-radius: 12px;
+  background: var(--viewer-surface);
+}
+
+.slice-panel h3 {
+  margin: 0;
+  padding: 0.75rem;
+  border-left: 4px solid;
+  font-size: 1rem;
+}
+
+.slice-image {
+  position: relative;
+  background: #000;
+}
+
+.slice-image img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.slice-image .slice-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.slice-note {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  color: #bfcadb;
+  font-size: 0.875rem;
+}
+
+@media (max-width: 640px) {
+  .slice-grid {
+    grid-template-columns: 1fr;
+  }
+}
