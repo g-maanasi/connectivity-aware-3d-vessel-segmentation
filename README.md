@@ -94,4 +94,4 @@ With corrected HU preprocessing, the combined objective improved validation patc
 
 - **Maanasi Ganapathy (mg2563)** owns CTA preprocessing and loss implementation, ran the initial baseline training, and contributed to the U-Net and Streamlit viewer.
 - **Imren More (im436)** owns patch-based training and full-volume evaluation, including patch sampling, checkpoint evaluation, and metric aggregation. She retrained the connectivity-aware U-Net.
-- **Kanta Garg (kg632)** owns the viewer's synthetic demo workflow, configured GitHub Codespaces to launch the viewer, and contributed to the Streamlit MVP.
+- **Kanta Garg (kg632)** owns the viewer's synthetic demo workflow, configured GitHub Codespaces to launch the viewer, and built the Streamlit MVP.
