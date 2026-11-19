@@ -16,6 +16,8 @@ Run with:  streamlit run app/streamlit_app.py
 
 from __future__ import annotations
 
+#import libraries
+
 import sys
 import tempfile
 from pathlib import Path
@@ -26,6 +28,8 @@ import pandas as pd
 import streamlit as st
 from vessel_seg.model_registry import MODEL_PATHS
 
+#Set repo and demo directory
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEMO_DIR = REPO_ROOT / "app" / "demo_cases"
 
@@ -33,12 +37,15 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from vessel_seg.metrics import compute_metrics  # noqa: E402
 
+#Various models available for viewing 
+
 MODELS = (
     ("Baseline U-Net", "baseline.nii.gz", (251, 146, 60)),
     ("Connectivity-aware U-Net", "connectivity.nii.gz", (167, 139, 250)),
     ("Combined U-Net", "combined.nii.gz", (56, 189, 248)),
 )
 TRUTH_FILE = ("Ground truth", "ground_truth.nii.gz", (45, 212, 191))  # teal
+#Three directions to view the scan, Axial is horizontal, Coronal is front to back and Sagittal is left to right
 PLANES = {"Axial": 2, "Coronal": 1, "Sagittal": 0}
 ERROR_COLORS = {
     "True positive": (74, 222, 128),   # green  – predicted vessel, is vessel
@@ -61,7 +68,7 @@ def load_trained_model(checkpoint_path):
     return model.eval()
 
 # --------------------------------------------------------------------------- #
-# Loading
+# Loading 
 # --------------------------------------------------------------------------- #
 @st.cache_data(max_entries=8, show_spinner=False)
 def load_volume(path: str, modified_at: int) -> tuple[np.ndarray, np.ndarray]:
