@@ -6,6 +6,7 @@
 import argparse
 import csv
 import json
+import time
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -145,7 +146,26 @@ def evaluate(args):
                             "ci_low": low, "ci_high": high, "valid_cases": n})
     write_csv(output / "summary.csv", summary)
 
+    # Per-cohort breakdown: the AVT set mixes three acquisition cohorts
+    # (Dongyang, KiTS, Rider) with different scanners and intensity quirks,
+    # so report each separately to expose cohort-specific failures.
+    cohorts = sorted({r["case_id"].split("/")[0] for r in rows})
+    if len(cohorts) > 1:
+        by_cohort = []
+        for cohort in cohorts:
+            for mode in args.modes:
+                selected = [r for r in rows
+                            if r["mode"] == mode and r["case_id"].startswith(cohort + "/")]
+                for metric in METRICS:
+                    mean, low, high, n = bootstrap_ci([r[metric] for r in selected])
+                    by_cohort.append({"cohort": cohort, "mode": mode, "metric": metric,
+                                      "mean": mean, "ci_low": low, "ci_high": high,
+                                      "valid_cases": n})
+        write_csv(output / "summary_by_cohort.csv", by_cohort)
+
     if set(args.modes) == {"baseline", "combined"}:
+        from scipy.stats import wilcoxon
+
         by_mode = {mode: {r["case_id"]: r for r in rows if r["mode"] == mode}
                    for mode in args.modes}
         paired = []
@@ -153,9 +173,28 @@ def evaluate(args):
             differences = [by_mode["combined"][c][metric] -
                            by_mode["baseline"][c][metric] for c in case_ids]
             mean, low, high, n = bootstrap_ci(differences)
+            # Wilcoxon signed-rank: nonparametric paired test alongside the
+            # bootstrap CI. NaN pairs (undefined metrics) are excluded.
+            finite = [d for d in differences if np.isfinite(d)]
+            try:
+                p_value = float(wilcoxon(finite).pvalue) if len(finite) >= 5 else float("nan")
+            except ValueError:  # e.g. all differences are zero
+                p_value = float("nan")
             paired.append({"metric": metric, "combined_minus_baseline": mean,
-                           "ci_low": low, "ci_high": high, "valid_pairs": n})
+                           "ci_low": low, "ci_high": high, "valid_pairs": n,
+                           "wilcoxon_p": p_value})
         write_csv(output / "paired_difference.csv", paired)
+
+    # Record exactly how these numbers were produced.
+    run_info = {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}
+    run_info["checkpoints"] = {
+        mode: str(overrides.get(mode, Path(args.checkpoint_dir) / mode / "best.pt"))
+        for mode in args.modes
+    }
+    run_info["case_ids"] = case_ids
+    run_info["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+    with (output / "run_info.json").open("w") as file:
+        json.dump(run_info, file, indent=2)
 
     print(f"Saved CSV metrics and comparison.png to {output}")
     print("HD95 is undefined (NaN) when only one mask is empty; check valid_cases.")

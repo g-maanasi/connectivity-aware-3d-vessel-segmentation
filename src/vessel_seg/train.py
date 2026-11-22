@@ -96,6 +96,7 @@ def run_cases(
             volume,
             patch_size=96,
             num_patches=args.patches_per_case,
+            augment=training and not args.no_augment,
         )
 
         # Group patches into batches and shuffle them during training.
@@ -380,6 +381,10 @@ def main():
     # Continue a previous run from its saved state instead of starting over.
     parser.add_argument("--resume", type=Path, default=None,
                         help="Path to a last.pt checkpoint; trains from its epoch+1 up to --epochs")
+
+    # Data augmentation is on by default for training patches.
+    parser.add_argument("--no-augment", action="store_true",
+                        help="Disable training-time flips/rotations/intensity jitter")
 
     # Speed: mixed precision (CUDA only) and cross-epoch volume caching.
     parser.add_argument("--no-amp", action="store_true",
