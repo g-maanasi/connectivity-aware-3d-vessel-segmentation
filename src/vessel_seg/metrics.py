@@ -1,10 +1,11 @@
 """Evaluation metrics for binary 3D vessel segmentation."""
 
 import numpy as np
-from scipy.ndimage import binary_erosion, distance_transform_edt
+from scipy.ndimage import binary_erosion, distance_transform_edt, label
 from skimage.morphology import skeletonize
 
-METRICS = ("dice", "cldice", "recall", "hd95_mm")
+METRICS = ("dice", "cldice", "recall", "hd95_mm",
+           "n_components", "largest_component_fraction")
 
 def crop_to_vessels(pred, truth):
     """Calculations to the area containing vessels."""
@@ -18,6 +19,21 @@ def crop_to_vessels(pred, truth):
         slices.append(slice(start, stop))
     region = tuple(slices)
     return pred[region], truth[region]
+
+def fragmentation(pred):
+    """How shattered a prediction is, measured BEFORE any post-processing.
+
+    Returns the number of 26-connected components and the fraction of
+    predicted voxels inside the largest one. Unlike clDice or HD95, these
+    cannot be improved by largest-component filtering, so on raw predictions
+    they measure connectivity the model actually learned.
+    """
+    if not pred.any():
+        return 0, float("nan")
+    labels, count = label(pred, structure=np.ones((3, 3, 3), bool))
+    sizes = np.bincount(labels.ravel())
+    sizes[0] = 0
+    return count, float(sizes.max() / sizes.sum())
 
 def cldice_score(pred, truth):
     """Compare 3D vessel centerlines with the corresponding vessel masks."""
@@ -60,6 +76,7 @@ def compute_metrics(pred, truth, spacing):
     if spacing.shape != (3,) or not np.isfinite(spacing).all() or (spacing <= 0).any():
         raise ValueError("Spacing must contain three positive finite values")
 
+    n_components, largest_fraction = fragmentation(pred)
     p, t = np.count_nonzero(pred), np.count_nonzero(truth)
     overlap = np.count_nonzero(pred & truth)
     dice = 2 * overlap / (p + t) if p + t else 1.0
@@ -71,6 +88,8 @@ def compute_metrics(pred, truth, spacing):
         "cldice": float(cldice_score(pred, truth)),
         "recall": float(recall),
         "hd95_mm": float(hd95_score(pred, truth, spacing)),
+        "n_components": float(n_components),
+        "largest_component_fraction": largest_fraction,
     }
 
 def bootstrap_ci(values, seed=42, samples=2000):
