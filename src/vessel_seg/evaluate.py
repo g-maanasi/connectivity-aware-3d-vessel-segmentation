@@ -16,6 +16,7 @@ from monai.inferers import sliding_window_inference
 from .data import discover_cases, load_case
 from .metrics import METRICS, bootstrap_ci, compute_metrics
 from .model import build_model
+from .postprocess import keep_largest_components
 from .train import get_device
 
 
@@ -80,14 +81,18 @@ def evaluate(args):
     if not case_ids:
         raise ValueError("No scans selected for evaluation")
 
-    # Do not mix a short validation check with the final results.
-    output = Path("runs/evaluation") / (args.split + ("_smoke" if args.max_cases else ""))
+    # Do not mix a short validation check or post-processed runs with the final results.
+    suffix = ("_smoke" if args.max_cases else "") + (f"_lcc{args.keep_largest}" if args.keep_largest else "")
+    output = Path(args.output_root) / (args.split + suffix)
     output.mkdir(parents=True, exist_ok=True)
+
+    # Per-mode checkpoint overrides, e.g. --checkpoint baseline=runs/repro_corrected/full/baseline/best.pt
+    overrides = dict(spec.split("=", 1) for spec in args.checkpoint)
 
     models = {}
     spacings = []
     for mode in args.modes:
-        checkpoint_path = Path("runs/hu_corrected/full") / mode / "best.pt"
+        checkpoint_path = Path(overrides.get(mode, Path(args.checkpoint_dir) / mode / "best.pt"))
         model, spacing = load_model(checkpoint_path, mode, device)
         models[mode] = model
         spacings.append(spacing)
@@ -104,6 +109,8 @@ def evaluate(args):
 
         for mode, model in models.items():
             pred = predict(model, volume.image, device)
+            if args.keep_largest:
+                pred = keep_largest_components(pred, args.keep_largest)
             scores = compute_metrics(pred, truth, spacing)
             
             # Calculate the proportion of predicted vessels that are correct
@@ -164,9 +171,23 @@ def main():
     parser.add_argument("--device", choices=["auto", "cpu", "cuda", "mps"], default="auto")
     parser.add_argument("--hu-offset", type=float, default=None,
                         help="Use the same intensity offset as training")
+    parser.add_argument("--checkpoint-dir", default="runs/hu_corrected/full",
+                        help="Directory holding <mode>/best.pt checkpoints")
+    parser.add_argument("--checkpoint", action="append", default=[], metavar="MODE=PATH",
+                        help="Override one mode's checkpoint, e.g. baseline=runs/repro_corrected/full/baseline/best.pt")
+    parser.add_argument("--output-root", default="runs/evaluation",
+                        help="Where to write per-split result folders")
+    parser.add_argument("--keep-largest", type=int, default=0, metavar="K",
+                        help="Keep only the K largest connected components of each prediction "
+                             "(0 = off). Results are written to a separate _lccK folder.")
     args = parser.parse_args()
     if args.max_cases < 0:
         parser.error("--max-cases must be nonnegative")
+    if args.keep_largest < 0:
+        parser.error("--keep-largest must be nonnegative")
+    for spec in args.checkpoint:
+        if "=" not in spec:
+            parser.error(f"--checkpoint needs MODE=PATH, got {spec!r}")
     evaluate(args)
 
 if __name__ == "__main__":
