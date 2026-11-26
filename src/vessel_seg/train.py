@@ -58,9 +58,10 @@ def prepare_cases(data_root: Path, splits_path: Path):
 
 def run_cases(
     model, criterion, optimizer, case_ids, case_by_id,
-    args, device, epoch, training,
+    args, device, epoch, training, get_volume=None, scaler=None,
 ):
     """Run one training or validation epoch, loading one CT scan at a time."""
+    use_amp = scaler is not None and scaler.is_enabled()
 
     # Switch the model to training or evaluation mode.
     model.train(training)
@@ -79,18 +80,23 @@ def run_cases(
         np.random.seed(sample_seed)
 
         # Load the CT scan and align its vessel mask to the same grid.
-        volume = load_case(
-            case_by_id[case_id],
-            spacing_mm=args.spacing_mm,
-            hu_window=(-200.0, 600.0),
-            hu_offset=args.hu_offset,
-        )
+        # get_volume may serve a cached copy to skip NRRD reads + resampling.
+        if get_volume is not None:
+            volume = get_volume(case_id)
+        else:
+            volume = load_case(
+                case_by_id[case_id],
+                spacing_mm=args.spacing_mm,
+                hu_window=(-200.0, 600.0),
+                hu_offset=args.hu_offset,
+            )
 
         # Sample matching 96 × 96 × 96 patches from the scan and mask.
         dataset = VesselPatchDataset(
             volume,
             patch_size=96,
             num_patches=args.patches_per_case,
+            augment=training and not args.no_augment,
         )
 
         # Group patches into batches and shuffle them during training.
@@ -113,18 +119,25 @@ def run_cases(
                 optimizer.zero_grad()
 
             # Predict vessel labels and compare the predictions with the masks.
-            # Track gradients only during training.
+            # Track gradients only during training. Mixed precision (AMP)
+            # runs the forward pass in float16 on CUDA for ~2x throughput.
             with torch.set_grad_enabled(training):
-                logits = model(images)
-                loss = criterion(logits, masks)
+                with torch.autocast(device_type=device.type, enabled=use_amp):
+                    logits = model(images)
+                    loss = criterion(logits, masks)
 
                 if not torch.isfinite(loss).item():
                     raise ValueError(f"Non-finite loss for {case_id}")
 
                 if training:
                     # Compute gradients and use them to update the model.
-                    loss.backward()
-                    optimizer.step()
+                    if use_amp:
+                        scaler.scale(loss).backward()
+                        scaler.step(optimizer)
+                        scaler.update()
+                    else:
+                        loss.backward()
+                        optimizer.step()
 
             # Weight each batch's loss by its patch count so a smaller
             # final batch contributes proportionally to the epoch average.
@@ -147,8 +160,9 @@ def run_cases(
         elapsed = time.perf_counter() - start_time
         print(f"  Finished {case_id} in {elapsed:.1f} seconds", flush=True)
 
-        # Release the full scan and its dataset before loading the next case.
-        del loader, dataset, volume
+        # Release the loader and dataset before the next case. The volume
+        # itself may live in the cross-epoch cache, so leave it alone.
+        del loader, dataset
 
     # Average loss across all patches. Compute one Dice score from the
     # pooled validation counts when at least one vessel voxel was counted.
@@ -213,19 +227,59 @@ def train(args):
     # AdamW updates the model weights after each training batch.
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
-    print(f"Device: {device} | mode: {args.mode}")
+    # Mixed precision needs CUDA; elsewhere the scaler is a no-op.
+    scaler = torch.amp.GradScaler(enabled=device.type == "cuda" and not args.no_amp)
+
+    # Resume a previous run: restore weights, optimizer, epoch, and best score,
+    # then continue until --epochs (e.g. a 15-epoch run resumed with
+    # --epochs 30 trains 15 MORE epochs, not 30 from scratch).
+    start_epoch = 1
+    best_dice = -1.0
+    if args.resume:
+        checkpoint = torch.load(args.resume, map_location="cpu", weights_only=True)
+        if checkpoint["mode"] != args.mode:
+            raise ValueError(f"Checkpoint mode {checkpoint['mode']!r} != --mode {args.mode!r}")
+        model.load_state_dict(checkpoint["model_state_dict"])
+        if "optimizer_state_dict" in checkpoint:
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        start_epoch = checkpoint["epoch"] + 1
+        best_dice = checkpoint.get("best_dice", checkpoint.get("val_dice", -1.0))
+        print(f"Resumed from {args.resume} at epoch {checkpoint['epoch']} "
+              f"(best val Dice so far: {best_dice:.4f})")
+
+    # Keep resampled volumes in RAM across epochs to skip repeated NRRD reads
+    # and resampling. Each 1 mm volume is roughly 100-250 MB; size the cap to
+    # your RAM. Validation cases benefit most since they repeat identically.
+    volume_cache = {}
+
+    def get_volume(case_id):
+        if case_id in volume_cache:
+            return volume_cache[case_id]
+        volume = load_case(
+            case_by_id[case_id],
+            spacing_mm=args.spacing_mm,
+            hu_window=(-200.0, 600.0),
+            hu_offset=args.hu_offset,
+        )
+        if len(volume_cache) < args.cache_cases:
+            volume_cache[case_id] = volume
+        return volume
+
+    print(f"Device: {device} | mode: {args.mode} | AMP: {scaler.is_enabled()} "
+          f"| cache: {args.cache_cases} cases")
     print(f"Cases: {len(train_ids)} train, {len(val_ids)} validation")
     print(f"Saving to: {output_dir}")
 
-    # Start below any valid Dice score so the first scored epoch can be saved.
-    best_dice = -1.0
-
     # Record training loss, validation loss, and validation Dice for each epoch.
-    with (output_dir / "history.csv").open("w", newline="") as file:
+    # A resumed run appends to its existing history instead of overwriting it.
+    history_path = output_dir / "history.csv"
+    resuming_history = args.resume and history_path.is_file()
+    with history_path.open("a" if resuming_history else "w", newline="") as file:
         writer = csv.writer(file)
-        writer.writerow(["epoch", "train_loss", "val_loss", "val_dice"])
+        if not resuming_history:
+            writer.writerow(["epoch", "train_loss", "val_loss", "val_dice"])
 
-        for epoch in range(1, args.epochs + 1):
+        for epoch in range(start_epoch, args.epochs + 1):
             print(f"\nEpoch {epoch}/{args.epochs}", flush=True)
 
             # Shuffle a copy of the training IDs. The order changes each
@@ -237,12 +291,14 @@ def train(args):
             train_loss, _ = run_cases(
                 model, criterion, optimizer, ordered_train_ids,
                 case_by_id, args, device, epoch, training=True,
+                get_volume=get_volume, scaler=scaler,
             )
 
             # Evaluate on the validation cases with the current weights.
             val_loss, val_dice = run_cases(
                 model, criterion, optimizer, val_ids,
                 case_by_id, args, device, epoch, training=False,
+                get_volume=get_volume, scaler=scaler,
             )
 
             # Write this epoch's scores to disk before starting the next one.
@@ -271,7 +327,23 @@ def train(args):
                 )
                 print("Saved best checkpoint")
 
+            # Always save the latest state so a run can resume with --resume.
+            torch.save(
+                {
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "epoch": epoch,
+                    "mode": args.mode,
+                    "seed": args.seed,
+                    "best_dice": best_dice,
+                    "patch_size": 96,
+                    "spacing_mm": args.spacing_mm,
+                },
+                output_dir / "last.pt",
+            )
+
     print(f"\nFinished. Best validation Dice: {best_dice:.4f}")
+    print(f"Resume later with: --resume {output_dir / 'last.pt'} --epochs <more>")
 
 
 def main():
@@ -305,6 +377,21 @@ def main():
     # steps used to approximate vessel centerlines for clDice.
     parser.add_argument("--cldice-weight", type=float, default=0.5)
     parser.add_argument("--skeleton-iterations", type=int, default=10)
+
+    # Continue a previous run from its saved state instead of starting over.
+    parser.add_argument("--resume", type=Path, default=None,
+                        help="Path to a last.pt checkpoint; trains from its epoch+1 up to --epochs")
+
+    # Data augmentation is on by default for training patches.
+    parser.add_argument("--no-augment", action="store_true",
+                        help="Disable training-time flips/rotations/intensity jitter")
+
+    # Speed: mixed precision (CUDA only) and cross-epoch volume caching.
+    parser.add_argument("--no-amp", action="store_true",
+                        help="Disable mixed-precision training on CUDA")
+    parser.add_argument("--cache-cases", type=int, default=0,
+                        help="Keep up to N resampled volumes in RAM across epochs "
+                             "(~100-250 MB each at 1 mm; 0 = off)")
 
     # Limit the number of cases for a quick test. A value of 0 uses the full split.
     parser.add_argument(

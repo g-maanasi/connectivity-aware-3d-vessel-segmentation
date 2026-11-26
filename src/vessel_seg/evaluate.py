@@ -6,6 +6,7 @@
 import argparse
 import csv
 import json
+import time
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -16,6 +17,7 @@ from monai.inferers import sliding_window_inference
 from .data import discover_cases, load_case
 from .metrics import METRICS, bootstrap_ci, compute_metrics
 from .model import build_model
+from .postprocess import keep_largest_components
 from .train import get_device
 
 
@@ -80,14 +82,18 @@ def evaluate(args):
     if not case_ids:
         raise ValueError("No scans selected for evaluation")
 
-    # Do not mix a short validation check with the final results.
-    output = Path("runs/evaluation") / (args.split + ("_smoke" if args.max_cases else ""))
+    # Do not mix a short validation check or post-processed runs with the final results.
+    suffix = ("_smoke" if args.max_cases else "") + (f"_lcc{args.keep_largest}" if args.keep_largest else "")
+    output = Path(args.output_root) / (args.split + suffix)
     output.mkdir(parents=True, exist_ok=True)
+
+    # Per-mode checkpoint overrides, e.g. --checkpoint baseline=runs/repro_corrected/full/baseline/best.pt
+    overrides = dict(spec.split("=", 1) for spec in args.checkpoint)
 
     models = {}
     spacings = []
     for mode in args.modes:
-        checkpoint_path = Path("runs/hu_corrected/full") / mode / "best.pt"
+        checkpoint_path = Path(overrides.get(mode, Path(args.checkpoint_dir) / mode / "best.pt"))
         model, spacing = load_model(checkpoint_path, mode, device)
         models[mode] = model
         spacings.append(spacing)
@@ -104,6 +110,8 @@ def evaluate(args):
 
         for mode, model in models.items():
             pred = predict(model, volume.image, device)
+            if args.keep_largest:
+                pred = keep_largest_components(pred, args.keep_largest)
             scores = compute_metrics(pred, truth, spacing)
             
             # Calculate the proportion of predicted vessels that are correct
@@ -138,7 +146,26 @@ def evaluate(args):
                             "ci_low": low, "ci_high": high, "valid_cases": n})
     write_csv(output / "summary.csv", summary)
 
+    # Per-cohort breakdown: the AVT set mixes three acquisition cohorts
+    # (Dongyang, KiTS, Rider) with different scanners and intensity quirks,
+    # so report each separately to expose cohort-specific failures.
+    cohorts = sorted({r["case_id"].split("/")[0] for r in rows})
+    if len(cohorts) > 1:
+        by_cohort = []
+        for cohort in cohorts:
+            for mode in args.modes:
+                selected = [r for r in rows
+                            if r["mode"] == mode and r["case_id"].startswith(cohort + "/")]
+                for metric in METRICS:
+                    mean, low, high, n = bootstrap_ci([r[metric] for r in selected])
+                    by_cohort.append({"cohort": cohort, "mode": mode, "metric": metric,
+                                      "mean": mean, "ci_low": low, "ci_high": high,
+                                      "valid_cases": n})
+        write_csv(output / "summary_by_cohort.csv", by_cohort)
+
     if set(args.modes) == {"baseline", "combined"}:
+        from scipy.stats import wilcoxon
+
         by_mode = {mode: {r["case_id"]: r for r in rows if r["mode"] == mode}
                    for mode in args.modes}
         paired = []
@@ -146,9 +173,28 @@ def evaluate(args):
             differences = [by_mode["combined"][c][metric] -
                            by_mode["baseline"][c][metric] for c in case_ids]
             mean, low, high, n = bootstrap_ci(differences)
+            # Wilcoxon signed-rank: nonparametric paired test alongside the
+            # bootstrap CI. NaN pairs (undefined metrics) are excluded.
+            finite = [d for d in differences if np.isfinite(d)]
+            try:
+                p_value = float(wilcoxon(finite).pvalue) if len(finite) >= 5 else float("nan")
+            except ValueError:  # e.g. all differences are zero
+                p_value = float("nan")
             paired.append({"metric": metric, "combined_minus_baseline": mean,
-                           "ci_low": low, "ci_high": high, "valid_pairs": n})
+                           "ci_low": low, "ci_high": high, "valid_pairs": n,
+                           "wilcoxon_p": p_value})
         write_csv(output / "paired_difference.csv", paired)
+
+    # Record exactly how these numbers were produced.
+    run_info = {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}
+    run_info["checkpoints"] = {
+        mode: str(overrides.get(mode, Path(args.checkpoint_dir) / mode / "best.pt"))
+        for mode in args.modes
+    }
+    run_info["case_ids"] = case_ids
+    run_info["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+    with (output / "run_info.json").open("w") as file:
+        json.dump(run_info, file, indent=2)
 
     print(f"Saved CSV metrics and comparison.png to {output}")
     print("HD95 is undefined (NaN) when only one mask is empty; check valid_cases.")
@@ -164,9 +210,23 @@ def main():
     parser.add_argument("--device", choices=["auto", "cpu", "cuda", "mps"], default="auto")
     parser.add_argument("--hu-offset", type=float, default=None,
                         help="Use the same intensity offset as training")
+    parser.add_argument("--checkpoint-dir", default="runs/hu_corrected/full",
+                        help="Directory holding <mode>/best.pt checkpoints")
+    parser.add_argument("--checkpoint", action="append", default=[], metavar="MODE=PATH",
+                        help="Override one mode's checkpoint, e.g. baseline=runs/repro_corrected/full/baseline/best.pt")
+    parser.add_argument("--output-root", default="runs/evaluation",
+                        help="Where to write per-split result folders")
+    parser.add_argument("--keep-largest", type=int, default=0, metavar="K",
+                        help="Keep only the K largest connected components of each prediction "
+                             "(0 = off). Results are written to a separate _lccK folder.")
     args = parser.parse_args()
     if args.max_cases < 0:
         parser.error("--max-cases must be nonnegative")
+    if args.keep_largest < 0:
+        parser.error("--keep-largest must be nonnegative")
+    for spec in args.checkpoint:
+        if "=" not in spec:
+            parser.error(f"--checkpoint needs MODE=PATH, got {spec!r}")
     evaluate(args)
 
 if __name__ == "__main__":

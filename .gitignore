@@ -9,3 +9,6 @@ __pycache__/
 *.pyc
 # Generated visualization files
 *.png
+# Python cache (belt and suspenders)
+__pycache__/
+*.pyc

@@ -16,7 +16,7 @@ class VesselPatchDataset(Dataset):
     The scan patch is the model input, and the mask patch is the label.
     """
 
-    def __init__(self, volume: Volume, patch_size=96, num_patches=8):
+    def __init__(self, volume: Volume, patch_size=96, num_patches=8, augment=False):
         # Get the already aligned CT scan and vessel mask from data.py
         self.image = np.asarray(volume.image, dtype=np.float32)
         self.mask = np.asarray(volume.mask != 0, dtype=np.uint8)
@@ -30,6 +30,7 @@ class VesselPatchDataset(Dataset):
 
         self.patch_size = patch_size
         self.num_patches = num_patches
+        self.augment = augment
 
         # Half of the patches will be centered on vessels
         self.num_vessel_patches = num_patches // 2
@@ -96,6 +97,29 @@ class VesselPatchDataset(Dataset):
         mask_patch = np.pad(
             mask_patch, padding, mode="constant", constant_values=0
         )
+
+        # Training-time augmentation: cheap regularization for a ~38-scan
+        # dataset. Geometry changes apply to image and mask together;
+        # intensity changes apply to the image only. Uses np.random, which
+        # train.py seeds per case/epoch, so runs stay reproducible.
+        if self.augment:
+            for axis in range(3):          # random mirror along each axis
+                if np.random.rand() < 0.5:
+                    image_patch = np.flip(image_patch, axis)
+                    mask_patch = np.flip(mask_patch, axis)
+            k = np.random.randint(4)       # random 90° turn in the axial plane
+            if k:
+                image_patch = np.rot90(image_patch, k, axes=(0, 1))
+                mask_patch = np.rot90(mask_patch, k, axes=(0, 1))
+            scale = np.float32(np.random.uniform(0.9, 1.1))
+            shift = np.float32(np.random.uniform(-0.05, 0.05))
+            image_patch = image_patch * scale + shift
+            if np.random.rand() < 0.5:     # mild Gaussian noise
+                image_patch = image_patch + np.random.normal(
+                    0.0, 0.02, image_patch.shape
+                ).astype(np.float32)
+            image_patch = np.ascontiguousarray(image_patch, dtype=np.float32)
+            mask_patch = np.ascontiguousarray(mask_patch)
 
         # Convert arrays to PyTorch tensors and add channel dimension
         image_tensor = torch.from_numpy(
