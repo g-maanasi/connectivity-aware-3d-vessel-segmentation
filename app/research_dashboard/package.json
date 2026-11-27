@@ -1,0 +1,16 @@
+{
+    "name": "vessel-research-dashboard",
+    "version": "1.0.0",
+    "private": true,
+    "scripts": {
+      "build": "esbuild src/Dashboard.jsx --bundle --minify --format=esm --outfile=dist/dashboard.js"
+    },
+    "dependencies": {
+      "react": "^19.0.0",
+      "react-dom": "^19.0.0",
+      "three": "^0.180.0"
+    },
+    "devDependencies": {
+      "esbuild": "^0.25.0"
+    }
+}

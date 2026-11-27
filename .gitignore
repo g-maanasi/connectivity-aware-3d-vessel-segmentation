@@ -9,3 +9,4 @@ __pycache__/
 *.pyc
 # Generated visualization files
 *.png
+app/research_dashboard/node_modules/
